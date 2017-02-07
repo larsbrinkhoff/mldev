@@ -188,6 +188,11 @@ static int request (int fd, int cmd, int n, word_t *args, word_t *reply)
 
   switch (aobjn & 0777777LL)
     {
+    case RDATA:
+      fprintf (stderr, "RDATA: %012llo bytes\n", reply[0]);
+      for (i = 1; i < n; i++)
+	fprintf (stderr, "   %012llo\n", reply[i]);
+      break;
     case ROPENI:
       if (reply[0] == 0777777777777LL)
 	{
@@ -234,6 +239,9 @@ int main (int argc, char **argv)
   args[3] = ascii_to_sixbit ("LARS");
   args[4] = 0;
   n = request (fd, COPENI, 5, args, reply);
+
+  args[0] = 5 * 11;
+  n = request (fd, CALLOC, 1, args, reply);
 
   return 0;
 }
