@@ -48,39 +48,38 @@ static int client_socket (const char *host, int port)
   return fd;
 }
 
-void send_word (int fd, word_t word)
+static void send_word (int fd, word_t word)
 {
   static int buffer = 0;
   unsigned char data;
 
   word &= 0777777777777LL;
-  fprintf (stderr, "send %012llo\n", word);
+  fprintf (stderr, "send word %012llo\n", word);
 
   if (buffer < 0)
     {
-      data = (-buffer << 4);
+      data = (~buffer << 4);
       data += (word >> 32) & 0x0f;
-      fprintf (stderr, "sent first: %ld (%02x)\n", write (fd, &data, 1), data);
+      fprintf (stderr, "sent byte: %ld (%02x)\n", write (fd, &data, 1), data);
       buffer = 0;
       word <<= 4;
     }
   else
     {
-      buffer = -(word & 0x0f);
+      buffer = ~(word & 0x0f);
     }
 
   int i;
   for (i = 0; i < 4; i++)
     {
-      fprintf (stderr, "word: %012llo\n", word);
       data = (word >> 28) & 0xff;
-      fprintf (stderr, "sent: %ld (%02x)\n", write (fd, &data, 1), data);
+      fprintf (stderr, "sent byte: %ld (%02x)\n", write (fd, &data, 1), data);
       word <<= 8;
       word &= 0777777777777LL;
     }
 }
 
-word_t recv_word (int fd)
+static word_t recv_word (int fd)
 {
   word_t word = 0;
   unsigned char data;
@@ -88,14 +87,14 @@ word_t recv_word (int fd)
 
   if (buffer < 0)
     {
-      word = -buffer;
+      word = ~buffer;
     }
 
   int i;
   for (i = 0; i < 4; i++)
     {
       word <<= 8;
-      fprintf (stderr, "recv: %ld (", read (fd, &data, 1));
+      fprintf (stderr, "recv byte: %ld (", read (fd, &data, 1));
       fprintf (stderr, "%02x)\n", data);
       word += data;
     }
@@ -104,36 +103,46 @@ word_t recv_word (int fd)
     buffer = 0;
   else
     {
-      fprintf (stderr, "recv last: %ld\n", read (fd, &data, 1));
+      fprintf (stderr, "recv byte: %ld (", read (fd, &data, 1));
+      fprintf (stderr, "%02x)\n", data);
       word <<= 4;
       word += (data >> 4) & 0x0f;
-      buffer = -(data & 0x0f);
+      buffer = ~(data & 0x0f);
     }
 
-  fprintf (stderr, "recv %012llo\n", word);
+  fprintf (stderr, "recv word %012llo\n", word);
   return word;
 }
 
-void request (int fd, int cmd, int n, int arg)
+static int request (int fd, int cmd, int n, word_t *args, word_t *reply)
 {
   word_t aobjn;
+  int i;
 
   aobjn = (-n << 18) + cmd;
   send_word (fd, aobjn);
-  send_word (fd, arg);
+  for (i = 0; i < n; i++)
+    send_word (fd, args[i]);
 
-  recv_word (fd);
-  recv_word (fd);
+  aobjn = recv_word (fd);
+  n = 01000000 - (aobjn >> 18);
+  for (i = 0; i < n; i++)
+    reply[i] = recv_word (fd);
+
+  return n;
 }
 
 int main (int argc, char **argv)
 {
-  int fd;
+  int fd, n;
+  word_t args[11];
+  word_t reply[11];
 
   fd = client_socket ("192.168.1.100", MLDEV_PORT);
   printf ("fd = %d\n", fd);
 
-  request (fd, CNOOP, 1, 42);
+  args[0] = 42;
+  n = request (fd, CNOOP, 1, args, reply);
 
   return 0;
 }
