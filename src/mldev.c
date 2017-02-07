@@ -48,6 +48,35 @@ static int client_socket (const char *host, int port)
   return fd;
 }
 
+static void sixbit_to_ascii (word_t word, char *ascii)
+{
+  int i;
+
+  for (i = 0; i < 6; i++)
+    {
+      ascii[i] = 040 + ((word >> (6 * (5 - i))) & 077);
+    }
+  ascii[6] = 0;
+}
+
+
+static word_t ascii_to_sixbit (char *ascii)
+{
+  char *spaces = "      ";
+  word_t word = 0;
+  int i;
+
+  for (i = 0; i < 6; i++)
+    {
+      word <<= 6;
+      if (*ascii == 0)
+	ascii = spaces;
+      word += ((*ascii++) - 040) & 077;
+    }
+
+  return word;
+}
+
 static void send_word (int fd, word_t word)
 {
   static int buffer = 0;
@@ -139,10 +168,16 @@ int main (int argc, char **argv)
   word_t reply[11];
 
   fd = client_socket ("192.168.1.100", MLDEV_PORT);
-  printf ("fd = %d\n", fd);
 
   args[0] = 42;
   n = request (fd, CNOOP, 1, args, reply);
+  
+  args[0] = ascii_to_sixbit ("DSK");
+  args[1] = ascii_to_sixbit ("LARS");
+  args[2] = ascii_to_sixbit ("EMACS");
+  args[3] = ascii_to_sixbit ("LARS");
+  args[4] = 0;
+  n = request (fd, COPENI, 5, args, reply);
 
   return 0;
 }
