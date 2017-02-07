@@ -59,7 +59,6 @@ static void sixbit_to_ascii (word_t word, char *ascii)
   ascii[6] = 0;
 }
 
-
 static word_t ascii_to_sixbit (char *ascii)
 {
   char *spaces = "      ";
@@ -75,6 +74,35 @@ static word_t ascii_to_sixbit (char *ascii)
     }
 
   return word;
+}
+
+static void print_date (FILE *f, word_t t)
+{
+  /* Bits 3.1-3.5 are the day, bits 3.6-3.9 are the month, and bits
+     4.1-4.7 are the year. */
+
+  int date = (t >> 18);
+  int day = (date & 037);
+  int month = (date & 0740);
+  int year = (date & 0777000);
+
+  fprintf (f, "%u-%02u-%02u", (year >> 9) + 1900, (month >> 5), day);
+
+  if (year & 0600000)
+    printf (" [WARNING: overflowed year field]");
+}
+
+static void print_datime (FILE *f, word_t t)
+{
+  /* The right half of this word is the time of day since midnight in
+     half-seconds. */
+
+  int seconds = (t & 0777777) / 2;
+  int minutes = (seconds / 60);
+  int hours = (minutes / 60);
+
+  print_date (f, t);
+  fprintf (f, " %02u:%02u:%02u", hours, (minutes % 60), (seconds % 60));
 }
 
 static void send_word (int fd, word_t word)
@@ -157,6 +185,34 @@ static int request (int fd, int cmd, int n, word_t *args, word_t *reply)
   n = 01000000 - (aobjn >> 18);
   for (i = 0; i < n; i++)
     reply[i] = recv_word (fd);
+
+  switch (aobjn & 0777777LL)
+    {
+    case ROPENI:
+      if (reply[0] == 0777777777777LL)
+	{
+	  char device[7], fn1[7], fn2[7], sname[7];
+	  sixbit_to_ascii (reply[1], device);
+	  sixbit_to_ascii (reply[2], fn1);
+	  sixbit_to_ascii (reply[3], fn2);
+	  sixbit_to_ascii (reply[4], sname);
+	  fprintf (stderr, "ROPENI: %s: %s; %s %s\n",
+		   device, sname, fn1, fn2);
+	  fprintf (stderr, "   %lld words, %lld %lld-bit bytes, ",
+		   reply[7], reply[5], reply[6]);
+	  if (reply[9] == 0777777777777LL)
+	    {
+	      print_datime (stderr, reply[10]);
+	      fputc ('\n', stderr);
+	    }
+	}
+      else
+	fprintf (stderr, "ROPENI: error %llo\n", reply[0]);
+      break;
+    case RNOOP:
+      fprintf (stderr, "RNOOP: %012llo\n", reply[0]);
+      break;
+    }
 
   return n;
 }
