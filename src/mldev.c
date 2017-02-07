@@ -222,6 +222,8 @@ static int request (int fd, int cmd, int n, word_t *args, word_t *reply)
   return n;
 }
 
+#pragma weak main
+
 int main (int argc, char **argv)
 {
   int fd, n;
