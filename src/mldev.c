@@ -182,9 +182,13 @@ static int request (int fd, int cmd, int n, word_t *args, word_t *reply)
     send_word (fd, args[i]);
 
   aobjn = recv_word (fd);
-  n = 01000000 - (aobjn >> 18);
+  n = (aobjn >> 18);
+  if (n != 0)
+    n = 01000000 - n;
   for (i = 0; i < n; i++)
     reply[i] = recv_word (fd);
+  if ((n & 1) == 0)
+    recv_word (fd);
 
   switch (aobjn & 0777777LL)
     {
@@ -217,6 +221,9 @@ static int request (int fd, int cmd, int n, word_t *args, word_t *reply)
     case RNOOP:
       fprintf (stderr, "RNOOP: %012llo\n", reply[0]);
       break;
+    case RICLOS:
+      fprintf (stderr, "RICLOS\n");
+      break;
     }
 
   return n;
@@ -242,8 +249,10 @@ int main (int argc, char **argv)
   args[4] = 0;
   n = request (fd, COPENI, 5, args, reply);
 
-  args[0] = 5 * 11;
+  args[0] = 5 * 10;
   n = request (fd, CALLOC, 1, args, reply);
+
+  n = request (fd, CICLOS, 1, args, reply);
 
   return 0;
 }
