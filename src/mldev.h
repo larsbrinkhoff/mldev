@@ -136,3 +136,7 @@
 
 #define RREUSE	014	/* Acknowledge a CREUSE
 			   Ignored argument */
+
+extern int init (char *);
+extern int read_mfd (int, char x[][7]);
+extern void read_dir (int, char *);

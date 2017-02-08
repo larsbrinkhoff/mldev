@@ -6,8 +6,11 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <string.h>
+#include <stdlib.h>
 
 #include "mldev.h"
+
+#define DIR_MAX 204 /* Maximum number of files in a directory. */
 
 typedef long long word_t;
 
@@ -76,6 +79,18 @@ static word_t ascii_to_sixbit (char *ascii)
   return word;
 }
 
+static void word_to_ascii (word_t word, char *ascii)
+{
+  int i;
+  for (i = 0; i < 5; i++)
+    {
+      *ascii++ = (word >> 29) & 0177;
+      word <<= 7;
+    }
+  *ascii = 0;
+}
+
+
 static void print_date (FILE *f, word_t t)
 {
   /* Bits 3.1-3.5 are the day, bits 3.6-3.9 are the month, and bits
@@ -107,17 +122,15 @@ static void print_datime (FILE *f, word_t t)
 
 static void print_ascii (FILE *f, int n, word_t *words)
 {
+  char string[6];
   word_t word;
   int i;
 
   while (n--)
     {
       word = *words++;
-      for (i = 0; i < 5; i++)
-	{
-	  fputc ((word >> 29) & 0177, f);
-	  word <<= 7;
-	}
+      word_to_ascii (word, string);
+      fputs (string, f);
     }
 }
 
@@ -127,13 +140,14 @@ static void send_word (int fd, word_t word)
   unsigned char data;
 
   word &= 0777777777777LL;
-  fprintf (stderr, "send word %012llo\n", word);
+  //fprintf (stderr, "send word %012llo\n", word);
 
   if (buffer < 0)
     {
       data = (~buffer << 4);
       data += (word >> 32) & 0x0f;
-      fprintf (stderr, "sent byte: %ld (%02x)\n", write (fd, &data, 1), data);
+      write (fd, &data, 1);
+      //fprintf (stderr, "sent byte: %ld (%02x)\n", write (fd, &data, 1), data);
       buffer = 0;
       word <<= 4;
     }
@@ -146,7 +160,8 @@ static void send_word (int fd, word_t word)
   for (i = 0; i < 4; i++)
     {
       data = (word >> 28) & 0xff;
-      fprintf (stderr, "sent byte: %ld (%02x)\n", write (fd, &data, 1), data);
+      write (fd, &data, 1);
+      //fprintf (stderr, "sent byte: %ld (%02x)\n", write (fd, &data, 1), data);
       word <<= 8;
       word &= 0777777777777LL;
     }
@@ -167,8 +182,9 @@ static word_t recv_word (int fd)
   for (i = 0; i < 4; i++)
     {
       word <<= 8;
-      fprintf (stderr, "recv byte: %ld (", read (fd, &data, 1));
-      fprintf (stderr, "%02x)\n", data);
+      read (fd, &data, 1);
+      //fprintf (stderr, "recv byte: %ld (", read (fd, &data, 1));
+      //fprintf (stderr, "%02x)\n", data);
       word += data;
     }
 
@@ -176,16 +192,19 @@ static word_t recv_word (int fd)
     buffer = 0;
   else
     {
-      fprintf (stderr, "recv byte: %ld (", read (fd, &data, 1));
-      fprintf (stderr, "%02x)\n", data);
+      read (fd, &data, 1);
+      //fprintf (stderr, "recv byte: %ld (", read (fd, &data, 1));
+      //fprintf (stderr, "%02x)\n", data);
       word <<= 4;
       word += (data >> 4) & 0x0f;
       buffer = ~(data & 0x0f);
     }
 
-  fprintf (stderr, "recv word %012llo\n", word);
+  //fprintf (stderr, "recv word %012llo\n", word);
   return word;
 }
+
+static int file_eof;
 
 static int request (int fd, int cmd, int n, word_t *args, word_t *reply)
 {
@@ -210,8 +229,8 @@ static int request (int fd, int cmd, int n, word_t *args, word_t *reply)
     {
     case RDATA:
       fprintf (stderr, "RDATA: %012llo bytes\n", reply[0]);
-      for (i = 1; i < n; i++)
-	fprintf (stderr, "   %012llo\n", reply[i]);
+      //for (i = 1; i < n; i++)
+        //fprintf (stderr, "   %012llo\n", reply[i]);
       break;
     case ROPENI:
       if (reply[0] == 0777777777777LL)
@@ -235,6 +254,10 @@ static int request (int fd, int cmd, int n, word_t *args, word_t *reply)
       else
 	fprintf (stderr, "ROPENI: error %llo\n", reply[0]);
       break;
+    case REOF:
+      fprintf (stderr, "REOF\n");
+      file_eof = 1;
+      break;
     case RNOOP:
       fprintf (stderr, "RNOOP: %012llo\n", reply[0]);
       break;
@@ -246,11 +269,13 @@ static int request (int fd, int cmd, int n, word_t *args, word_t *reply)
   return n;
 }
 
-static void read_file (int fd, char *device, char *fn1, char *fn2, char *sname)
+static int read_file (int fd, char *device, char *fn1, char *fn2,
+		      char *sname, word_t *buffer, int size)
+		       
 {
   word_t args[5];
   word_t reply[11];
-  int n;
+  int m, n;
 
   args[0] = ascii_to_sixbit (device);
   args[1] = ascii_to_sixbit (fn1);
@@ -259,23 +284,69 @@ static void read_file (int fd, char *device, char *fn1, char *fn2, char *sname)
   args[4] = 0;
   n = request (fd, COPENI, 5, args, reply);
 
-  args[0] = 5 * 10;
-  n = request (fd, CALLOC, 1, args, reply);
-  print_ascii (stderr, n - 1, reply + 1);
-  fputc ('\n', stderr);
+  m = 0;
+  file_eof = 0;
+  while (!file_eof)
+    {
+      args[0] = 5 * size;
+      n = request (fd, CALLOC, 1, args, buffer);
+      print_ascii (stderr, n - 1, buffer + 1);
+      fputc ('\n', stderr);
+      m += n - 1;
+    }
 
   args[0] = 0;
   n = request (fd, CICLOS, 1, args, reply);
+
+  return m;
 }
 
-static void read_mfd (int fd)
+int read_mfd (int fd, char dirs[204][7])
 {
-  read_file (fd, "DSK", "M.F.D.", "(FILE)", "");
+  int i, j, n, p;
+  word_t buffer[0201];
+  char filename[11];
+
+  n = read_file (fd, "DSK", "M.F.D.", "(FILE)", "", buffer, 0200);
+
+  p = 0;
+  j = 0;
+  for (i = 1; i < n; i++)
+    {
+      word_to_ascii (buffer[i], filename + p);
+      p += 5;
+      if (p >= 9)
+	{
+	  memcpy (dirs[j], filename + 1, 6);
+	  dirs[j][6] = 0;
+	  j++;
+
+	  memmove (filename, filename + 9, p - 9);
+	  p -= 9;
+	}
+    }
+
+  return j;
 }
 
-static void read_dir (int fd, char *sname)
+void read_dir (int fd, char *sname)
 {
-  read_file (fd, "DSK", ".FILE.", "(DIR)", sname);
+  word_t buffer[0201];
+  read_file (fd, "DSK", ".FILE.", "(DIR)", sname, buffer, 0201);
+}
+
+int init (char *host)
+{
+  int fd;
+
+  fd = client_socket (host, MLDEV_PORT);
+  if (fd == -1)
+    {
+      fprintf (stderr, "Error opening connection.\n");
+      exit (1);
+    }
+
+  return fd;
 }
 
 #pragma weak main
@@ -285,15 +356,16 @@ int main (int argc, char **argv)
   int fd, n;
   word_t args[11];
   word_t reply[11];
+  char dirs[204][7];
 
-  fd = client_socket ("192.168.1.100", MLDEV_PORT);
+  fd = init ("192.168.1.100");
 
   args[0] = 42;
   n = request (fd, CNOOP, 1, args, reply);
   
-  read_file (fd, "DSK", "LARS", "EMACS", "LARS");
+  read_file (fd, "DSK", "LARS", "EMACS", "LARS", reply, 10);
   read_dir (fd, "LARS");
-  read_mfd (fd);
+  read_mfd (fd, dirs);
 
   return 0;
 }

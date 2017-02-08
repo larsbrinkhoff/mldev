@@ -3,6 +3,9 @@
 #include <stdio.h>
 #include <errno.h>
 #include <string.h>
+#include "mldev.h"
+
+int fd;
 
 static void *mldev_init(struct fuse_conn_info *conn)
 {
@@ -30,13 +33,19 @@ static int mldev_getattr(const char *path, struct stat *stbuf)
 static int mldev_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 			 off_t offset, struct fuse_file_info *fi)
 {
+  char dirs[204][7];
+  int i, n;
+
   fprintf (stderr, "readdir: %s\n", path);
   if (strcmp(path, "/") != 0)
     return -ENOENT;
 
   filler (buf, ".", NULL, 0);
   filler (buf, "..", NULL, 0);
-  filler (buf, "foobar", NULL, 0);
+
+  n = read_mfd (fd, dirs);
+  for (i = 0; i < n; i++)
+    filler (buf, dirs[i], NULL, 0);
 
   return 0;
 }
@@ -72,5 +81,7 @@ static struct fuse_operations mldev =
 
 int main (int argc, char **argv)
 {
+  fd = init ("192.168.1.100");
+
   return fuse_main(argc, argv, &mldev, NULL);
 }
