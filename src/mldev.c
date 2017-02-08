@@ -105,6 +105,22 @@ static void print_datime (FILE *f, word_t t)
   fprintf (f, " %02u:%02u:%02u", hours, (minutes % 60), (seconds % 60));
 }
 
+static void print_ascii (FILE *f, int n, word_t *words)
+{
+  word_t word;
+  int i;
+
+  while (n--)
+    {
+      word = *words++;
+      for (i = 0; i < 5; i++)
+	{
+	  fputc ((word >> 29) & 0177, f);
+	  word <<= 7;
+	}
+    }
+}
+
 static void send_word (int fd, word_t word)
 {
   static int buffer = 0;
@@ -207,13 +223,14 @@ static int request (int fd, int cmd, int n, word_t *args, word_t *reply)
 	  sixbit_to_ascii (reply[4], sname);
 	  fprintf (stderr, "ROPENI: %s: %s; %s %s\n",
 		   device, sname, fn1, fn2);
-	  fprintf (stderr, "   %lld words, %lld %lld-bit bytes, ",
+	  fprintf (stderr, "   %lld words, %lld %lld-bit bytes",
 		   reply[7], reply[5], reply[6]);
 	  if (reply[9] == 0777777777777LL)
 	    {
+	      fprintf (stderr, ", ");
 	      print_datime (stderr, reply[10]);
-	      fputc ('\n', stderr);
 	    }
+	  fputc ('\n', stderr);
 	}
       else
 	fprintf (stderr, "ROPENI: error %llo\n", reply[0]);
@@ -229,6 +246,38 @@ static int request (int fd, int cmd, int n, word_t *args, word_t *reply)
   return n;
 }
 
+static void read_file (int fd, char *device, char *fn1, char *fn2, char *sname)
+{
+  word_t args[5];
+  word_t reply[11];
+  int n;
+
+  args[0] = ascii_to_sixbit (device);
+  args[1] = ascii_to_sixbit (fn1);
+  args[2] = ascii_to_sixbit (fn2);
+  args[3] = ascii_to_sixbit (sname);
+  args[4] = 0;
+  n = request (fd, COPENI, 5, args, reply);
+
+  args[0] = 5 * 10;
+  n = request (fd, CALLOC, 1, args, reply);
+  print_ascii (stderr, n - 1, reply + 1);
+  fputc ('\n', stderr);
+
+  args[0] = 0;
+  n = request (fd, CICLOS, 1, args, reply);
+}
+
+static void read_mfd (int fd)
+{
+  read_file (fd, "DSK", "M.F.D.", "(FILE)", "");
+}
+
+static void read_dir (int fd, char *sname)
+{
+  read_file (fd, "DSK", ".FILE.", "(DIR)", sname);
+}
+
 #pragma weak main
 
 int main (int argc, char **argv)
@@ -242,17 +291,9 @@ int main (int argc, char **argv)
   args[0] = 42;
   n = request (fd, CNOOP, 1, args, reply);
   
-  args[0] = ascii_to_sixbit ("DSK");
-  args[1] = ascii_to_sixbit ("LARS");
-  args[2] = ascii_to_sixbit ("EMACS");
-  args[3] = ascii_to_sixbit ("LARS");
-  args[4] = 0;
-  n = request (fd, COPENI, 5, args, reply);
-
-  args[0] = 5 * 10;
-  n = request (fd, CALLOC, 1, args, reply);
-
-  n = request (fd, CICLOS, 1, args, reply);
+  read_file (fd, "DSK", "LARS", "EMACS", "LARS");
+  read_dir (fd, "LARS");
+  read_mfd (fd);
 
   return 0;
 }
