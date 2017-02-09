@@ -135,8 +135,10 @@ static int mldev_read(const char *path, char *buf, size_t size, off_t offset,
 	   path, sname, fn1, fn2, size, offset);
 
   n = read_file (fd, buffer, 0200);
-  words_to_ascii (buffer + 1, n - 1, buf);
+  if (n < 0)
+    return 0;
 
+  words_to_ascii (buffer + 1, n - 1, buf);
   return buffer[0];
 }
 

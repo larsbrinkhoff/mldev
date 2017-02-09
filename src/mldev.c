@@ -96,7 +96,6 @@ void words_to_ascii (word_t *word, int n, char *ascii)
       word_to_ascii (*word++, ascii);
       ascii += 5;
     }
-  *ascii = 0;
 }
 
 static void print_date (FILE *f, word_t t)
@@ -148,14 +147,12 @@ static void send_word (int fd, word_t word)
   unsigned char data;
 
   word &= 0777777777777LL;
-  //fprintf (stderr, "send word %012llo\n", word);
 
   if (buffer < 0)
     {
       data = (~buffer << 4);
       data += (word >> 32) & 0x0f;
       write (fd, &data, 1);
-      //fprintf (stderr, "sent byte: %ld (%02x)\n", write (fd, &data, 1), data);
       buffer = 0;
       word <<= 4;
     }
@@ -169,7 +166,6 @@ static void send_word (int fd, word_t word)
     {
       data = (word >> 28) & 0xff;
       write (fd, &data, 1);
-      //fprintf (stderr, "sent byte: %ld (%02x)\n", write (fd, &data, 1), data);
       word <<= 8;
       word &= 0777777777777LL;
     }
@@ -191,8 +187,6 @@ static word_t recv_word (int fd)
     {
       word <<= 8;
       read (fd, &data, 1);
-      //fprintf (stderr, "recv byte: %ld (", read (fd, &data, 1));
-      //fprintf (stderr, "%02x)\n", data);
       word += data;
     }
 
@@ -201,14 +195,11 @@ static word_t recv_word (int fd)
   else
     {
       read (fd, &data, 1);
-      //fprintf (stderr, "recv byte: %ld (", read (fd, &data, 1));
-      //fprintf (stderr, "%02x)\n", data);
       word <<= 4;
       word += (data >> 4) & 0x0f;
       buffer = ~(data & 0x0f);
     }
 
-  //fprintf (stderr, "recv word %012llo\n", word);
   return word;
 }
 
@@ -227,6 +218,7 @@ static int request (int fd, int cmd, int n, word_t *args, word_t *reply)
   for (i = 0; i < n; i++)
     send_word (fd, args[i]);
 
+ again:
   aobjn = recv_word (fd);
   n = (aobjn >> 18);
   if (n != 0)
@@ -240,8 +232,6 @@ static int request (int fd, int cmd, int n, word_t *args, word_t *reply)
     {
     case RDATA:
       fprintf (stderr, "RDATA: %012llo bytes\n", reply[0]);
-      //for (i = 1; i < n; i++)
-        //fprintf (stderr, "   %012llo\n", reply[i]);
       break;
     case ROPENI:
       if (reply[0] == 0777777777777LL)
@@ -253,8 +243,9 @@ static int request (int fd, int cmd, int n, word_t *args, word_t *reply)
 	  sixbit_to_ascii (reply[4], sname);
 	  fprintf (stderr, "ROPENI: %s: %s; %s %s\n",
 		   device, sname, fn1, fn2);
-	  fprintf (stderr, "   %lld words, %lld %lld-bit bytes",
-		   reply[7], reply[5], reply[6]);
+	  if (reply[7] != 0777777777777LL)
+	    fprintf (stderr, "   %lld words, %lld %lld-bit bytes",
+		     reply[7], reply[5], reply[6]);
 	  if (reply[9] == 0777777777777LL)
 	    {
 	      fprintf (stderr, ", ");
@@ -271,6 +262,8 @@ static int request (int fd, int cmd, int n, word_t *args, word_t *reply)
     case REOF:
       fprintf (stderr, "REOF\n");
       file_eof = 1;
+      if (cmd != CALLOC)
+	goto again;
       break;
     case RNOOP:
       fprintf (stderr, "RNOOP: %012llo\n", reply[0]);
@@ -282,6 +275,9 @@ static int request (int fd, int cmd, int n, word_t *args, word_t *reply)
       fprintf (stderr, "RIOC\n");
       file_error = reply[0];
       break;
+    default:
+      fprintf (stderr, "Unknown reply: %012llo\n", aobjn);
+      exit (1);
     }
 
   return n;
@@ -298,6 +294,7 @@ int open_file (int fd, char *device, char *fn1, char *fn2, char *sname)
   args[2] = ascii_to_sixbit (fn2);
   args[3] = ascii_to_sixbit (sname);
   args[4] = 0;
+  fprintf (stderr, "COPENI: %s: %s; %s %s\n", device, sname, fn1, fn2);
   n = request (fd, COPENI, 5, args, reply);
 
   return n;
@@ -309,6 +306,7 @@ int close_file (int fd)
   word_t reply[1];
 
   args[0] = 0;
+  fprintf (stderr, "CICLOS\n");
   return request (fd, CICLOS, 1, args, reply);
 }
 
@@ -318,8 +316,13 @@ int read_file (int fd, word_t *buffer, int size)
   int n;
 
   args[0] = 5 * size;
+  fprintf (stderr, "CALLOC: %012llo\n", args[0]);
+  file_eof = 0;
   n = request (fd, CALLOC, 1, args, buffer);
-  return n;
+  if (file_eof)
+    return -1;
+  else
+    return n;
 }
 
 static int slurp_file (int fd, char *device, char *fn1, char *fn2,
@@ -335,12 +338,14 @@ static int slurp_file (int fd, char *device, char *fn1, char *fn2,
     return -1;
 
   m = 0;
-  file_eof = 0;
-  while (!file_eof)
+  for (;;)
     {
       n = read_file (fd, buffer, size);
-      print_ascii (stderr, n - 1, buffer + 1);
-      fputc ('\n', stderr);
+      if (n < 0)
+	break;
+      memmove (buffer, buffer + 1, sizeof (word_t) * (n - 1));
+      buffer += n - 1;
+      size -= n - 1;
       m += n - 1;
     }
 
@@ -351,39 +356,37 @@ static int slurp_file (int fd, char *device, char *fn1, char *fn2,
 
 int read_mfd (int fd, char dirs[204][7])
 {
-  int i, j, n, p;
-  word_t buffer[0201];
+  int i, j, n;
+  word_t buffer[1 + DIR_MAX * 2];
+  char text[DIR_MAX * 9], *p;
   char filename[11];
 
-  n = slurp_file (fd, "DSK", "M.F.D.", "(FILE)", "", buffer, 0200);
+  n = slurp_file (fd, "DSK", "M.F.D.", "(FILE)", "", buffer, DIR_MAX * 2);
+  words_to_ascii (buffer, n, text);
 
-  p = 0;
-  j = 0;
-  for (i = 1; i < n; i++)
+  p = text;
+  i = 0;
+  while (*p != 0 && *p != '\f')
     {
-      word_to_ascii (buffer[i], filename + p);
-      p += 5;
-      if (p >= 9)
-	{
-	  memcpy (dirs[j], filename + 1, 6);
-	  dirs[j][6] = 0;
-	  j++;
-
-	  memmove (filename, filename + 9, p - 9);
-	  p -= 9;
-	}
+      strncpy (dirs[i], p + 1, 6);
+      dirs[i][6] = 0;
+      i++;
+      p = strchr (p, '\n');
+      if (p == NULL)
+	break;
+      p++;
     }
 
-  return j;
+  return i;
 }
 
 int read_dir (int fd, char *sname, char files[204][14])
 {
-  char text[2048], *p;
-  word_t buffer[0201];
+  char text[DIR_MAX * 50], *p;
+  word_t buffer[1 + DIR_MAX * 10];
   int i, n;
 
-  n = slurp_file (fd, "DSK", ".FILE.", "(DIR)", sname, buffer, 0200);
+  n = slurp_file (fd, "DSK", ".FILE.", "(DIR)", sname, buffer, DIR_MAX * 10);
   words_to_ascii (buffer + 1, n - 1, text);
 
   p = text;
@@ -394,6 +397,7 @@ int read_dir (int fd, char *sname, char files[204][14])
   while (p != NULL && *p != 0 && *p != '\f')
     {
       strncpy (files[i], p + 6, 13);
+      files[i][13] = 0;
       i++;
       p = strchr (p, '\n');
       if (p == NULL)
