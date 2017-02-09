@@ -90,6 +90,16 @@ static void word_to_ascii (word_t word, char *ascii)
   *ascii = 0;
 }
 
+static void words_to_ascii (word_t *word, int n, char *ascii)
+{
+  int i;
+  for (i = 0; i < n; i++)
+    {
+      word_to_ascii (*word++, ascii);
+      ascii += 5;
+    }
+  *ascii = 0;
+}
 
 static void print_date (FILE *f, word_t t)
 {
@@ -329,10 +339,31 @@ int read_mfd (int fd, char dirs[204][7])
   return j;
 }
 
-void read_dir (int fd, char *sname)
+int read_dir (int fd, char *sname, char files[204][14])
 {
+  char text[2048], *p;
   word_t buffer[0201];
-  read_file (fd, "DSK", ".FILE.", "(DIR)", sname, buffer, 0201);
+  int i, n;
+
+  n = read_file (fd, "DSK", ".FILE.", "(DIR)", sname, buffer, 0201);
+  words_to_ascii (buffer + 1, n - 1, text);
+
+  p = text;
+  p = strchr (p, '\n') + 1; // Skip first line.
+  p = strchr (p, '\n') + 1; // Skip second line too.
+
+  i = 0;
+  while (p != NULL && *p != 0 && *p != '\f')
+    {
+      strncpy (files[i], p + 6, 13);
+      i++;
+      p = strchr (p, '\n');
+      if (p == NULL)
+	break;
+      p++;
+    }
+
+  return i;
 }
 
 int init (char *host)
@@ -357,6 +388,7 @@ int main (int argc, char **argv)
   word_t args[11];
   word_t reply[11];
   char dirs[204][7];
+  char files[204][14];
 
   fd = init ("192.168.1.100");
 
@@ -364,7 +396,7 @@ int main (int argc, char **argv)
   n = request (fd, CNOOP, 1, args, reply);
   
   read_file (fd, "DSK", "LARS", "EMACS", "LARS", reply, 10);
-  read_dir (fd, "LARS");
+  read_dir (fd, "LARS", files);
   read_mfd (fd, dirs);
 
   return 0;

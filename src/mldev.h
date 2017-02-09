@@ -139,4 +139,4 @@
 
 extern int init (char *);
 extern int read_mfd (int, char x[][7]);
-extern void read_dir (int, char *);
+extern int read_dir (int, char *, char x[][14]);
