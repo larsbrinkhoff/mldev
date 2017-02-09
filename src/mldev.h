@@ -137,6 +137,13 @@
 #define RREUSE	014	/* Acknowledge a CREUSE
 			   Ignored argument */
 
+typedef long long word_t;
+
 extern int init (char *);
 extern int read_mfd (int, char x[][7]);
 extern int read_dir (int, char *, char x[][14]);
+extern int open_file (int, char *, char *, char *, char *);
+extern int close_file (int);
+extern int read_file (int, word_t *, int);
+
+extern void words_to_ascii (word_t *, int, char *);

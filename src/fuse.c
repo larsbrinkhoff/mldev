@@ -16,6 +16,10 @@ static void split_path (const char *path, char *sname, char *fn1, char *fn2)
 {
   const char *start, *end;
 
+  memset (sname, 0, 7);
+  memset (fn1, 0, 7);
+  memset (fn2, 0, 7);
+
   start = path + 1;
   end = strchr (start, '/');
   if (end)
@@ -38,7 +42,7 @@ static int mldev_getattr(const char *path, struct stat *stbuf)
   char sname[7], fn1[7], fn2[7];
 
   split_path(path, sname, fn1, fn2);
-  fprintf (stderr, "getattr: %s -> %s %s %s\n", path, sname, fn1, fn2);
+  fprintf (stderr, "getattr: %s -> %s; %s %s\n", path, sname, fn1, fn2);
 
   memset(stbuf, 0, sizeof(struct stat));
 
@@ -56,6 +60,7 @@ static int mldev_getattr(const char *path, struct stat *stbuf)
     {
       stbuf->st_mode = S_IFREG | 0555;
       stbuf->st_nlink = 1;
+      stbuf->st_size = 355;
     }
 
   return 0;
@@ -71,7 +76,7 @@ static int mldev_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
   split_path(path, sname, fn1, fn2);
 
-  fprintf (stderr, "readdir: %s -> %s %s %s\n", path, sname, fn1, fn2);
+  fprintf (stderr, "readdir: %s -> %s; %s %s\n", path, sname, fn1, fn2);
 
   filler (buf, ".", NULL, 0);
   filler (buf, "..", NULL, 0);
@@ -93,13 +98,27 @@ static int mldev_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
 static int mldev_open(const char *path, struct fuse_file_info *fi)
 {
-  fprintf (stderr, "open: %s\n", path);
+  char sname[7], fn1[7], fn2[7];
 
-  if (strcmp(path, "/foobar") != 0)
-    return -ENOENT;
+  split_path(path, sname, fn1, fn2);
+  fprintf (stderr, "open: %s -> %s; %s %s\n", path, sname, fn1, fn2);
 
   if ((fi->flags & 3) != O_RDONLY)
     return -EACCES;
+
+  open_file (fd, "DSK", fn1, fn2, sname);
+
+  return 0;
+}
+
+static int mldev_close(const char *path, struct fuse_file_info *fi)
+{
+  char sname[7], fn1[7], fn2[7];
+
+  split_path(path, sname, fn1, fn2);
+  fprintf (stderr, "close: %s -> %s; %s %s\n", path, sname, fn1, fn2);
+
+  close_file (fd);
 
   return 0;
 }
@@ -107,8 +126,18 @@ static int mldev_open(const char *path, struct fuse_file_info *fi)
 static int mldev_read(const char *path, char *buf, size_t size, off_t offset,
 		      struct fuse_file_info *fi)
 {
-  fprintf (stderr, "read: %s\n", path);
-  return 0;
+  char sname[7], fn1[7], fn2[7];
+  word_t buffer[0202];
+  int n;
+
+  split_path(path, sname, fn1, fn2);
+  fprintf (stderr, "read: %s -> %s; %s %s, size=%ld, offset=%ld\n",
+	   path, sname, fn1, fn2, size, offset);
+
+  n = read_file (fd, buffer, 0200);
+  words_to_ascii (buffer + 1, n - 1, buf);
+
+  return buffer[0];
 }
 
 static struct fuse_operations mldev =
@@ -117,6 +146,7 @@ static struct fuse_operations mldev =
   .getattr	= mldev_getattr,
   .readdir	= mldev_readdir,
   .open		= mldev_open,
+  .release	= mldev_close,
   .read		= mldev_read,
 };
 

@@ -12,8 +12,6 @@
 
 #define DIR_MAX 204 /* Maximum number of files in a directory. */
 
-typedef long long word_t;
-
 static int client_socket (const char *host, int port)
 {
   struct sockaddr_in address;
@@ -90,7 +88,7 @@ static void word_to_ascii (word_t word, char *ascii)
   *ascii = 0;
 }
 
-static void words_to_ascii (word_t *word, int n, char *ascii)
+void words_to_ascii (word_t *word, int n, char *ascii)
 {
   int i;
   for (i = 0; i < n; i++)
@@ -215,11 +213,14 @@ static word_t recv_word (int fd)
 }
 
 static int file_eof;
+static int file_error;
 
 static int request (int fd, int cmd, int n, word_t *args, word_t *reply)
 {
   word_t aobjn;
   int i;
+
+  file_error = 0;
 
   aobjn = (-n << 18) + cmd;
   send_word (fd, aobjn);
@@ -262,7 +263,10 @@ static int request (int fd, int cmd, int n, word_t *args, word_t *reply)
 	  fputc ('\n', stderr);
 	}
       else
-	fprintf (stderr, "ROPENI: error %llo\n", reply[0]);
+	{
+	  fprintf (stderr, "ROPENI: error %llo\n", reply[0]);
+	  file_error = reply[0];
+	}
       break;
     case REOF:
       fprintf (stderr, "REOF\n");
@@ -274,18 +278,20 @@ static int request (int fd, int cmd, int n, word_t *args, word_t *reply)
     case RICLOS:
       fprintf (stderr, "RICLOS\n");
       break;
+    case RIOC:
+      fprintf (stderr, "RIOC\n");
+      file_error = reply[0];
+      break;
     }
 
   return n;
 }
 
-static int read_file (int fd, char *device, char *fn1, char *fn2,
-		      char *sname, word_t *buffer, int size)
-		       
+int open_file (int fd, char *device, char *fn1, char *fn2, char *sname)
 {
   word_t args[5];
   word_t reply[11];
-  int m, n;
+  int n;
 
   args[0] = ascii_to_sixbit (device);
   args[1] = ascii_to_sixbit (fn1);
@@ -294,19 +300,51 @@ static int read_file (int fd, char *device, char *fn1, char *fn2,
   args[4] = 0;
   n = request (fd, COPENI, 5, args, reply);
 
+  return n;
+}
+
+int close_file (int fd)
+{
+  word_t args[1];
+  word_t reply[1];
+
+  args[0] = 0;
+  return request (fd, CICLOS, 1, args, reply);
+}
+
+int read_file (int fd, word_t *buffer, int size)
+{
+  word_t args[1];
+  int n;
+
+  args[0] = 5 * size;
+  n = request (fd, CALLOC, 1, args, buffer);
+  return n;
+}
+
+static int slurp_file (int fd, char *device, char *fn1, char *fn2,
+		      char *sname, word_t *buffer, int size)
+		       
+{
+  word_t args[5];
+  word_t reply[11];
+  int m, n;
+
+  open_file (fd, device, fn1, fn2, sname);
+  if (file_error)
+    return -1;
+
   m = 0;
   file_eof = 0;
   while (!file_eof)
     {
-      args[0] = 5 * size;
-      n = request (fd, CALLOC, 1, args, buffer);
+      n = read_file (fd, buffer, size);
       print_ascii (stderr, n - 1, buffer + 1);
       fputc ('\n', stderr);
       m += n - 1;
     }
 
-  args[0] = 0;
-  n = request (fd, CICLOS, 1, args, reply);
+  close_file (fd);
 
   return m;
 }
@@ -317,7 +355,7 @@ int read_mfd (int fd, char dirs[204][7])
   word_t buffer[0201];
   char filename[11];
 
-  n = read_file (fd, "DSK", "M.F.D.", "(FILE)", "", buffer, 0200);
+  n = slurp_file (fd, "DSK", "M.F.D.", "(FILE)", "", buffer, 0200);
 
   p = 0;
   j = 0;
@@ -345,7 +383,7 @@ int read_dir (int fd, char *sname, char files[204][14])
   word_t buffer[0201];
   int i, n;
 
-  n = read_file (fd, "DSK", ".FILE.", "(DIR)", sname, buffer, 0201);
+  n = slurp_file (fd, "DSK", ".FILE.", "(DIR)", sname, buffer, 0200);
   words_to_ascii (buffer + 1, n - 1, text);
 
   p = text;
@@ -395,7 +433,7 @@ int main (int argc, char **argv)
   args[0] = 42;
   n = request (fd, CNOOP, 1, args, reply);
   
-  read_file (fd, "DSK", "LARS", "EMACS", "LARS", reply, 10);
+  slurp_file (fd, "DSK", "LARS", "EMACS", "LARS", reply, 10);
   read_dir (fd, "LARS", files);
   read_mfd (fd, dirs);
 
