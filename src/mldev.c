@@ -105,6 +105,18 @@ void words_to_ascii (word_t *word, int n, char *ascii)
     }
 }
 
+static char *unslash (char *name)
+{
+  char *p = name;
+  while (*p)
+    {
+      if (*p == '/')
+	*p = '|';
+      p++;
+    }
+  return name;
+}
+
 static void print_date (FILE *f, word_t t)
 {
   /* Bits 3.1-3.5 are the day, bits 3.6-3.9 are the month, and bits
@@ -378,6 +390,7 @@ int read_mfd (int fd, char dirs[][7])
     {
       strncpy (dirs[i], p + 1, 6);
       dirs[i][6] = 0;
+      unslash (dirs[i]);
       i++;
       p = strchr (p, '\n');
       if (p == NULL)
@@ -388,13 +401,13 @@ int read_mfd (int fd, char dirs[][7])
   return i;
 }
 
-int read_dir (int fd, char *sname, char files[][15])
+int read_dir (int fd, char *dev, char *sname, char files[][15])
 {
-  char text[DIR_MAX * 50], *p;
+  char text[DIR_MAX * 50], *p, *q;
   word_t buffer[1 + DIR_MAX * 10];
   int i, n;
 
-  n = slurp_file (fd, "DSK", ".FILE.", "(DIR)", sname, buffer, DIR_MAX * 10);
+  n = slurp_file (fd, dev, ".FILE.", "(DIR)", sname, buffer, DIR_MAX * 10);
   words_to_ascii (buffer + 1, n - 1, text);
 
   p = text;
@@ -404,11 +417,15 @@ int read_dir (int fd, char *sname, char files[][15])
   i = 0;
   while (p != NULL && *p != 0 && *p != '\f')
     {
+      q = strchr (p, '\n');
+      if (q - p < 20)
+	break;
       files[i][0] = p[2];
       strncpy (files[i] + 1, p + 6, 13);
       files[i][14] = 0;
+      unslash (files[i]);
       i++;
-      p = strchr (p, '\n');
+      p = q;
       if (p == NULL)
 	break;
       p++;

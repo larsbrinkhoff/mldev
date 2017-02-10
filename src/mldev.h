@@ -143,7 +143,7 @@ typedef long long word_t;
 
 extern int init (char *);
 extern int read_mfd (int, char x[][7]);
-extern int read_dir (int, char *, char x[][15]);
+extern int read_dir (int, char *, char *, char x[][15]);
 extern int open_file (int, char *, char *, char *, char *);
 extern int close_file (int);
 extern int read_file (int, word_t *, int);

@@ -28,15 +28,28 @@ static char *trim (char *name, int n)
   return name;
 }
 
-static void split_path (const char *path, char *sname, char *fn1, char *fn2)
+static void split_path (const char *path, char *device, char *sname,
+			  char *fn1, char *fn2)
 {
   const char *start, *end;
 
+  strcpy (device, "DSK   ");
   memset (sname, 0, 7);
   memset (fn1, 0, 7);
   memset (fn2, 0, 7);
 
   start = path + 1;
+  end = strchr (start, ':');
+  if (end)
+    {
+      strncpy (device, start, end - start);
+      start = end + 1;
+    }
+  else
+    {
+      strcpy (device, "DSK");
+    }
+
   end = strchr (start, '/');
   if (end)
     {
@@ -52,6 +65,7 @@ static void split_path (const char *path, char *sname, char *fn1, char *fn2)
       *fn2 = 0;
     }
 
+  trim (device, 5);
   trim (fn1, 5);
   trim (fn2, 5);
   trim (sname, 5);
@@ -59,9 +73,9 @@ static void split_path (const char *path, char *sname, char *fn1, char *fn2)
 
 static int mldev_getattr(const char *path, struct stat *stbuf)
 {
-  char sname[7], fn1[7], fn2[7];
+  char device[7], sname[7], fn1[7], fn2[7];
 
-  split_path(path, sname, fn1, fn2);
+  split_path(path, device, sname, fn1, fn2);
 
   memset(stbuf, 0, sizeof(struct stat));
 
@@ -87,13 +101,14 @@ static int mldev_getattr(const char *path, struct stat *stbuf)
 static int mldev_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 			 off_t offset, struct fuse_file_info *fi)
 {
-  char sname[7], fn1[7], fn2[7];
+  char device[7], sname[7], fn1[7], fn2[7];
   char dirs[DIR_MAX][7];
   char files[DIR_MAX][15];
   int i, n;
 
-  split_path(path, sname, fn1, fn2);
-  fprintf (stderr, "readdir: %s -> %s; %s %s\n", path, sname, fn1, fn2);
+  split_path(path, device, sname, fn1, fn2);
+  fprintf (stderr, "readdir: %s -> %s: %s; %s %s\n",
+	   path, device, sname, fn1, fn2);
 
   filler (buf, ".", NULL, 0);
   filler (buf, "..", NULL, 0);
@@ -106,7 +121,7 @@ static int mldev_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
     }
   else
     {
-      n = read_dir (fd, sname, files);
+      n = read_dir (fd, device, sname, files);
       for (i = 0; i < n; i++)
 	{
 	  struct stat st;
@@ -127,13 +142,14 @@ static int mldev_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
 static int mldev_open(const char *path, struct fuse_file_info *fi)
 {
-  char sname[7], fn1[7], fn2[7];
+  char device[7], sname[7], fn1[7], fn2[7];
 
   if (strcmp (path, current_path) != 0 && *current_path != 0)
     mldev_close (path, fi);
 
-  split_path(path, sname, fn1, fn2);
-  fprintf (stderr, "open: %s -> %s; %s %s\n", path, sname, fn1, fn2);
+  split_path(path, device, sname, fn1, fn2);
+  fprintf (stderr, "open: %s -> %s: %s; %s %s\n",
+	   path, device, sname, fn1, fn2);
 
   if ((fi->flags & 3) != O_RDONLY)
     return -EACCES;
@@ -145,7 +161,7 @@ static int mldev_open(const char *path, struct fuse_file_info *fi)
 
   fi->nonseekable = 1; /* Not sure about this. */
 
-  open_file (fd, "DSK", fn1, fn2, sname);
+  open_file (fd, device, fn1, fn2, sname);
 
   current_path = path;
   current_offset = 0;
@@ -155,9 +171,9 @@ static int mldev_open(const char *path, struct fuse_file_info *fi)
 
 static int mldev_close(const char *path, struct fuse_file_info *fi)
 {
-  char sname[7], fn1[7], fn2[7];
+  char device[7], sname[7], fn1[7], fn2[7];
 
-  split_path(path, sname, fn1, fn2);
+  split_path(path, device, sname, fn1, fn2);
   fprintf (stderr, "close: %s\n", path);
 
   close_file (fd);
@@ -176,11 +192,11 @@ static int mldev_close(const char *path, struct fuse_file_info *fi)
 static int mldev_read(const char *path, char *buf, size_t size, off_t offset,
 		      struct fuse_file_info *fi)
 {
-  char sname[7], fn1[7], fn2[7];
+  char device[7], sname[7], fn1[7], fn2[7];
   word_t buffer[MAX_READ + 2];
   int n;
 
-  split_path(path, sname, fn1, fn2);
+  split_path(path, device, sname, fn1, fn2);
   fprintf (stderr, "read: %s, size=%ld, offset=%ld\n", path, size, offset);
 
   if (offset != current_offset)
