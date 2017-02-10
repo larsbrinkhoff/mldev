@@ -129,23 +129,36 @@ static int mldev_close(const char *path, struct fuse_file_info *fi)
   return 0;
 }
 
+/* This seems to be a good size for file read requests.  Larger sizes
+   seem to confuse MLSLV to trigger RDATA replies to be bigger than
+   the requested by CALLOC.  */
+#define MAX_READ 0400
+
 static int mldev_read(const char *path, char *buf, size_t size, off_t offset,
 		      struct fuse_file_info *fi)
 {
   char sname[7], fn1[7], fn2[7];
-  word_t buffer[0202];
+  word_t buffer[MAX_READ + 2];
   int n;
 
   split_path(path, sname, fn1, fn2);
   fprintf (stderr, "read: %s -> %s; %s %s, size=%ld, offset=%ld\n",
 	   path, sname, fn1, fn2, size, offset);
 
-  n = read_file (fd, buffer, 0200);
+  n = size / 5;
+  if (n > MAX_READ)
+    n = MAX_READ;
+  if (n == 0)
+    n = 1;
+  n = read_file (fd, buffer, n);
   if (n < 0)
     return 0;
 
   words_to_ascii (buffer + 1, n - 1, buf);
-  return buffer[0];
+  n = buffer[0];
+  if (n > size)
+    n = size;
+  return n;
 }
 
 static struct fuse_operations mldev =
