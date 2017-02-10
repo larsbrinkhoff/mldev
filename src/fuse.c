@@ -60,7 +60,6 @@ static int mldev_getattr(const char *path, struct stat *stbuf)
     {
       stbuf->st_mode = S_IFREG | 0555;
       stbuf->st_nlink = 1;
-      stbuf->st_size = 355;
     }
 
   return 0;
@@ -105,6 +104,13 @@ static int mldev_open(const char *path, struct fuse_file_info *fi)
 
   if ((fi->flags & 3) != O_RDONLY)
     return -EACCES;
+
+  /* In the default case, FUSE looks at st_size to see the size of
+     the file.  With MLDEV, this takes some effort.  To avoid that,
+     we can set the direct_io flag. */
+  fi->direct_io = 1;
+
+  fi->nonseekable = 1; /* Not sure about this. */
 
   open_file (fd, "DSK", fn1, fn2, sname);
 
