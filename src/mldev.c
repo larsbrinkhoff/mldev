@@ -4,6 +4,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <arpa/inet.h>
 #include <string.h>
 #include <stdlib.h>
@@ -47,6 +48,14 @@ static int client_socket (const char *host, int port)
     } 
 
   return fd;
+}
+
+static void flush_socket (int fd)
+{
+  int flag = 1;
+  setsockopt (fd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof flag);
+  flag = 0;
+  setsockopt (fd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof flag);
 }
 
 static void sixbit_to_ascii (word_t word, char *ascii)
@@ -217,6 +226,7 @@ static int request (int fd, int cmd, int n, word_t *args, word_t *reply)
   send_word (fd, aobjn);
   for (i = 0; i < n; i++)
     send_word (fd, args[i]);
+  flush_socket (fd);
 
  again:
   aobjn = recv_word (fd);
@@ -243,7 +253,7 @@ static int request (int fd, int cmd, int n, word_t *args, word_t *reply)
 	  sixbit_to_ascii (reply[4], sname);
 	  fprintf (stderr, "ROPENI: %s: %s; %s %s\n",
 		   device, sname, fn1, fn2);
-	  if (reply[7] != 0777777777777LL)
+	  if (reply[5] != 0777777777777LL)
 	    fprintf (stderr, "   %lld words, %lld %lld-bit bytes",
 		     reply[7], reply[5], reply[6]);
 	  if (reply[9] == 0777777777777LL)
