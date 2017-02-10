@@ -6,7 +6,11 @@
 #include <string.h>
 #include "mldev.h"
 
-int fd;
+static int fd;
+static const char *current_path = "";
+static off_t current_offset = 0;
+
+static int mldev_close(const char *, struct fuse_file_info *);
 
 static void *mldev_init(struct fuse_conn_info *conn)
 {
@@ -109,6 +113,9 @@ static int mldev_open(const char *path, struct fuse_file_info *fi)
 {
   char sname[7], fn1[7], fn2[7];
 
+  if (strcmp (path, current_path) != 0 && *current_path != 0)
+    mldev_close (path, fi);
+
   split_path(path, sname, fn1, fn2);
   fprintf (stderr, "open: %s -> %s; %s %s\n", path, sname, fn1, fn2);
 
@@ -124,6 +131,9 @@ static int mldev_open(const char *path, struct fuse_file_info *fi)
 
   open_file (fd, "DSK", fn1, fn2, sname);
 
+  current_path = path;
+  current_offset = 0;
+
   return 0;
 }
 
@@ -135,6 +145,9 @@ static int mldev_close(const char *path, struct fuse_file_info *fi)
   fprintf (stderr, "close: %s\n", path);
 
   close_file (fd);
+
+  current_path = "";
+  current_offset = 0;
 
   return 0;
 }
@@ -154,6 +167,13 @@ static int mldev_read(const char *path, char *buf, size_t size, off_t offset,
   split_path(path, sname, fn1, fn2);
   fprintf (stderr, "read: %s, size=%ld, offset=%ld\n", path, size, offset);
 
+  if (offset != current_offset)
+    {
+      fprintf (stderr, "read: offset %ld != current %ld\n",
+	       offset, current_offset);
+      return -ESPIPE;
+    }
+
   n = size / 5;
   if (n > MAX_READ)
     n = MAX_READ;
@@ -167,6 +187,8 @@ static int mldev_read(const char *path, char *buf, size_t size, off_t offset,
   n = buffer[0];
   if (n > size)
     n = size;
+
+  current_offset += n;
   return n;
 }
 
