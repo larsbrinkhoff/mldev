@@ -316,6 +316,8 @@ int open_file (int fd, char *device, char *fn1, char *fn2, char *sname)
   args[4] = 0;
   fprintf (stderr, "COPENI: %s: %s; %s %s\n", device, sname, fn1, fn2);
   n = request (fd, COPENI, 5, args, reply);
+  if (file_error)
+    return -1;
 
   return n;
 }
@@ -408,6 +410,9 @@ int read_dir (int fd, char *dev, char *sname, char files[][15])
   int i, n;
 
   n = slurp_file (fd, dev, ".FILE.", "(DIR)", sname, buffer, DIR_MAX * 10);
+  if (n < 0)
+    return -1;
+
   words_to_ascii (buffer + 1, n - 1, text);
 
   p = text;

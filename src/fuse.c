@@ -122,6 +122,9 @@ static int mldev_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
   else
     {
       n = read_dir (fd, device, sname, files);
+      if (n < 0)
+	return -EIO;
+
       for (i = 0; i < n; i++)
 	{
 	  struct stat st;
@@ -143,6 +146,7 @@ static int mldev_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 static int mldev_open(const char *path, struct fuse_file_info *fi)
 {
   char device[7], sname[7], fn1[7], fn2[7];
+  int n;
 
   if (strcmp (path, current_path) != 0 && *current_path != 0)
     mldev_close (path, fi);
@@ -161,7 +165,9 @@ static int mldev_open(const char *path, struct fuse_file_info *fi)
 
   fi->nonseekable = 1; /* Not sure about this. */
 
-  open_file (fd, device, fn1, fn2, sname);
+  n = open_file (fd, device, fn1, fn2, sname);
+  if (n < 0)
+    return -EIO;
 
   current_path = path;
   current_offset = 0;
