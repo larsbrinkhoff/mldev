@@ -17,6 +17,17 @@ static void *mldev_init(struct fuse_conn_info *conn)
   return NULL;
 }
 
+static char *trim (char *name, int n)
+{
+  char *p = name + n;
+  while ((*p == ' ' || *p == 0) && p >= name)
+    {
+      *p = 0;
+      p--;
+    }
+  return name;
+}
+
 static void split_path (const char *path, char *sname, char *fn1, char *fn2)
 {
   const char *start, *end;
@@ -40,6 +51,10 @@ static void split_path (const char *path, char *sname, char *fn1, char *fn2)
       *fn1 = 0;
       *fn2 = 0;
     }
+
+  trim (fn1, 5);
+  trim (fn2, 5);
+  trim (sname, 5);
 }
 
 static int mldev_getattr(const char *path, struct stat *stbuf)
@@ -78,6 +93,7 @@ static int mldev_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
   int i, n;
 
   split_path(path, sname, fn1, fn2);
+  fprintf (stderr, "readdir: %s -> %s; %s %s\n", path, sname, fn1, fn2);
 
   filler (buf, ".", NULL, 0);
   filler (buf, "..", NULL, 0);
@@ -86,7 +102,7 @@ static int mldev_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
     {
       n = read_mfd (fd, dirs);
       for (i = 0; i < n; i++)
-	filler (buf, dirs[i], NULL, 0);
+	filler (buf, trim (dirs[i], 5), NULL, 0);
     }
   else
     {
@@ -103,7 +119,7 @@ static int mldev_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	    }
 	  st.st_mode |= 0555;
 	  st.st_nlink = 1;
-	  filler (buf, files[i] + 1, &st, 0);
+	  filler (buf, trim (files[i] + 1, 12), &st, 0);
 	}
     }
   return 0;
