@@ -1,6 +1,6 @@
 CPPFLAGS=-D_FILE_OFFSET_BITS=64
 
-all: mldev mlslv mount-mldev
+all: mount-mldev
 
 mldev: src/mldev.h src/mldev.o
 	$(CC) -o $@ $^

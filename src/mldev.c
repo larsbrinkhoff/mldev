@@ -431,25 +431,3 @@ int init (char *host)
 
   return fd;
 }
-
-#pragma weak main
-
-int main (int argc, char **argv)
-{
-  int fd, n;
-  word_t args[11];
-  word_t reply[11];
-  char dirs[204][7];
-  char files[204][14];
-
-  fd = init ("192.168.1.100");
-
-  args[0] = 42;
-  n = request (fd, CNOOP, 1, args, reply);
-  
-  slurp_file (fd, "DSK", "LARS", "EMACS", "LARS", reply, 10);
-  read_dir (fd, "LARS", files);
-  read_mfd (fd, dirs);
-
-  return 0;
-}
