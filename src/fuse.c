@@ -1,6 +1,7 @@
 #define FUSE_USE_VERSION 26
 #include <fuse.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <errno.h>
 #include <string.h>
 #include "mldev.h"
@@ -42,7 +43,6 @@ static int mldev_getattr(const char *path, struct stat *stbuf)
   char sname[7], fn1[7], fn2[7];
 
   split_path(path, sname, fn1, fn2);
-  fprintf (stderr, "getattr: %s -> %s; %s %s\n", path, sname, fn1, fn2);
 
   memset(stbuf, 0, sizeof(struct stat));
 
@@ -69,13 +69,11 @@ static int mldev_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 			 off_t offset, struct fuse_file_info *fi)
 {
   char sname[7], fn1[7], fn2[7];
-  char dirs[204][7];
-  char files[204][14];
+  char dirs[DIR_MAX][7];
+  char files[DIR_MAX][15];
   int i, n;
 
   split_path(path, sname, fn1, fn2);
-
-  fprintf (stderr, "readdir: %s -> %s; %s %s\n", path, sname, fn1, fn2);
 
   filler (buf, ".", NULL, 0);
   filler (buf, "..", NULL, 0);
@@ -90,7 +88,19 @@ static int mldev_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
     {
       n = read_dir (fd, sname, files);
       for (i = 0; i < n; i++)
-	filler (buf, files[i], NULL, 0);
+	{
+	  struct stat st;
+	  memset (&st, 0, sizeof st);
+	  switch (files[i][0])
+	    {
+	    case '0': st.st_mode = S_IFREG; break;
+	    case 'L': st.st_mode = S_IFLNK; break;
+	    default: exit(1);
+	    }
+	  st.st_mode |= 0555;
+	  st.st_nlink = 1;
+	  filler (buf, files[i] + 1, &st, 0);
+	}
     }
   return 0;
 }
@@ -122,7 +132,7 @@ static int mldev_close(const char *path, struct fuse_file_info *fi)
   char sname[7], fn1[7], fn2[7];
 
   split_path(path, sname, fn1, fn2);
-  fprintf (stderr, "close: %s -> %s; %s %s\n", path, sname, fn1, fn2);
+  fprintf (stderr, "close: %s\n", path);
 
   close_file (fd);
 
@@ -142,8 +152,7 @@ static int mldev_read(const char *path, char *buf, size_t size, off_t offset,
   int n;
 
   split_path(path, sname, fn1, fn2);
-  fprintf (stderr, "read: %s -> %s; %s %s, size=%ld, offset=%ld\n",
-	   path, sname, fn1, fn2, size, offset);
+  fprintf (stderr, "read: %s, size=%ld, offset=%ld\n", path, size, offset);
 
   n = size / 5;
   if (n > MAX_READ)
@@ -161,6 +170,13 @@ static int mldev_read(const char *path, char *buf, size_t size, off_t offset,
   return n;
 }
 
+static int mldev_readlink (const char *path, char *data, size_t n)
+{
+  fprintf (stderr, "readlink: %s\n", path);
+  strcpy (data, "foo/bar");
+  return 7;
+}
+
 static struct fuse_operations mldev =
 {
   .init         = mldev_init,
@@ -169,6 +185,7 @@ static struct fuse_operations mldev =
   .open		= mldev_open,
   .release	= mldev_close,
   .read		= mldev_read,
+  .readlink	= mldev_readlink,
 };
 
 int main (int argc, char **argv)

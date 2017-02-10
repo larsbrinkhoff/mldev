@@ -11,8 +11,6 @@
 
 #include "mldev.h"
 
-#define DIR_MAX 204 /* Maximum number of files in a directory. */
-
 static int client_socket (const char *host, int port)
 {
   struct sockaddr_in address;
@@ -364,7 +362,7 @@ static int slurp_file (int fd, char *device, char *fn1, char *fn2,
   return m;
 }
 
-int read_mfd (int fd, char dirs[204][7])
+int read_mfd (int fd, char dirs[][7])
 {
   int i, j, n;
   word_t buffer[1 + DIR_MAX * 2];
@@ -390,7 +388,7 @@ int read_mfd (int fd, char dirs[204][7])
   return i;
 }
 
-int read_dir (int fd, char *sname, char files[204][14])
+int read_dir (int fd, char *sname, char files[][15])
 {
   char text[DIR_MAX * 50], *p;
   word_t buffer[1 + DIR_MAX * 10];
@@ -406,8 +404,9 @@ int read_dir (int fd, char *sname, char files[204][14])
   i = 0;
   while (p != NULL && *p != 0 && *p != '\f')
     {
-      strncpy (files[i], p + 6, 13);
-      files[i][13] = 0;
+      files[i][0] = p[2];
+      strncpy (files[i] + 1, p + 6, 13);
+      files[i][14] = 0;
       i++;
       p = strchr (p, '\n');
       if (p == NULL)
