@@ -7,7 +7,7 @@ mldev: src/mldev.h src/mldev.o
 
 mlslv: src/mldev.h src/mlslv.o
 
-mount-mldev: src/mldev.h src/mldev.o src/fuse.o
+mount-mldev: src/mldev.h src/mldev.o src/fuse.o src/protoc.h src/protoc.o
 	$(CC) -o $@ $^ -lfuse
 
 clean:

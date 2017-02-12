@@ -1,60 +1,9 @@
 #include <stdio.h>
-#include <netdb.h>
-#include <unistd.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h>
-#include <arpa/inet.h>
 #include <string.h>
 #include <stdlib.h>
 
+#include "protoc.h"
 #include "mldev.h"
-
-static int client_socket (const char *host, int port)
-{
-  struct sockaddr_in address;
-  int fd;
-
-  memset (&address, '\0', sizeof address);
-#if defined(__FreeBSD__) || defined(__OpenBSD__)
-  address.sin_len = sizeof address;
-#endif
-  address.sin_family = PF_INET;
-  address.sin_port = htons ((unsigned short)port);
-  address.sin_addr.s_addr = inet_addr (host);
-
-  if (address.sin_addr.s_addr == INADDR_NONE)
-    {
-      struct hostent *ent;
-
-      ent = gethostbyname (host);
-      if (ent == 0)
-	return -1;
-
-      memcpy (&address.sin_addr.s_addr, ent->h_addr, (size_t)ent->h_length);
-    }
-
-  fd = socket (PF_INET, SOCK_STREAM, 0);
-  if (fd == -1)
-    return -1;
-  
-  if (connect (fd, (struct sockaddr *)&address, sizeof address) == -1)
-    {
-      close (fd);
-      return -1;
-    } 
-
-  return fd;
-}
-
-static void flush_socket (int fd)
-{
-  int flag = 1;
-  setsockopt (fd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof flag);
-  flag = 0;
-  setsockopt (fd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof flag);
-}
 
 static void sixbit_to_ascii (word_t word, char *ascii)
 {
@@ -65,23 +14,6 @@ static void sixbit_to_ascii (word_t word, char *ascii)
       ascii[i] = 040 + ((word >> (6 * (5 - i))) & 077);
     }
   ascii[6] = 0;
-}
-
-static word_t ascii_to_sixbit (char *ascii)
-{
-  char *spaces = "      ";
-  word_t word = 0;
-  int i;
-
-  for (i = 0; i < 6; i++)
-    {
-      word <<= 6;
-      if (*ascii == 0)
-	ascii = spaces;
-      word += ((*ascii++) - 040) & 077;
-    }
-
-  return word;
 }
 
 static void word_to_ascii (word_t word, char *ascii)
@@ -95,8 +27,9 @@ static void word_to_ascii (word_t word, char *ascii)
   *ascii = 0;
 }
 
-void words_to_ascii (word_t *word, int n, char *ascii)
+void words_to_ascii (void *data, int n, char *ascii)
 {
+  word_t *word = data;
   int i;
   for (i = 0; i < n; i++)
     {
@@ -160,193 +93,6 @@ static void print_ascii (FILE *f, int n, word_t *words)
     }
 }
 
-static void send_word (int fd, word_t word)
-{
-  static int buffer = 0;
-  unsigned char data;
-
-  word &= 0777777777777LL;
-
-  if (buffer < 0)
-    {
-      data = (~buffer << 4);
-      data += (word >> 32) & 0x0f;
-      write (fd, &data, 1);
-      buffer = 0;
-      word <<= 4;
-    }
-  else
-    {
-      buffer = ~(word & 0x0f);
-    }
-
-  int i;
-  for (i = 0; i < 4; i++)
-    {
-      data = (word >> 28) & 0xff;
-      write (fd, &data, 1);
-      word <<= 8;
-      word &= 0777777777777LL;
-    }
-}
-
-static word_t recv_word (int fd)
-{
-  word_t word = 0;
-  unsigned char data;
-  static int buffer = 0;
-
-  if (buffer < 0)
-    {
-      word = ~buffer;
-    }
-
-  int i;
-  for (i = 0; i < 4; i++)
-    {
-      word <<= 8;
-      read (fd, &data, 1);
-      word += data;
-    }
-
-  if (buffer < 0)
-    buffer = 0;
-  else
-    {
-      read (fd, &data, 1);
-      word <<= 4;
-      word += (data >> 4) & 0x0f;
-      buffer = ~(data & 0x0f);
-    }
-
-  return word;
-}
-
-static int file_eof;
-static int file_error;
-
-static int request (int fd, int cmd, int n, word_t *args, word_t *reply)
-{
-  word_t aobjn;
-  int i;
-
-  file_error = 0;
-
-  aobjn = (-n << 18) + cmd;
-  send_word (fd, aobjn);
-  for (i = 0; i < n; i++)
-    send_word (fd, args[i]);
-  flush_socket (fd);
-
- again:
-  aobjn = recv_word (fd);
-  n = (aobjn >> 18);
-  if (n != 0)
-    n = 01000000 - n;
-  for (i = 0; i < n; i++)
-    reply[i] = recv_word (fd);
-  if ((n & 1) == 0)
-    recv_word (fd);
-
-  switch (aobjn & 0777777LL)
-    {
-    case RDATA:
-      fprintf (stderr, "RDATA: %012llo bytes\n", reply[0]);
-      break;
-    case ROPENI:
-      if (reply[0] == 0777777777777LL)
-	{
-	  char device[7], fn1[7], fn2[7], sname[7];
-	  sixbit_to_ascii (reply[1], device);
-	  sixbit_to_ascii (reply[2], fn1);
-	  sixbit_to_ascii (reply[3], fn2);
-	  sixbit_to_ascii (reply[4], sname);
-	  fprintf (stderr, "ROPENI: %s: %s; %s %s\n",
-		   device, sname, fn1, fn2);
-	  if (reply[5] != 0777777777777LL)
-	    fprintf (stderr, "   %lld words, %lld %lld-bit bytes",
-		     reply[7], reply[5], reply[6]);
-	  if (reply[9] == 0777777777777LL)
-	    {
-	      fprintf (stderr, ", ");
-	      print_datime (stderr, reply[10]);
-	    }
-	  fputc ('\n', stderr);
-	}
-      else
-	{
-	  fprintf (stderr, "ROPENI: error %llo\n", reply[0]);
-	  file_error = reply[0];
-	}
-      break;
-    case REOF:
-      fprintf (stderr, "REOF\n");
-      file_eof = 1;
-      if (cmd != CALLOC)
-	goto again;
-      break;
-    case RNOOP:
-      fprintf (stderr, "RNOOP: %012llo\n", reply[0]);
-      break;
-    case RICLOS:
-      fprintf (stderr, "RICLOS\n");
-      break;
-    case RIOC:
-      fprintf (stderr, "RIOC\n");
-      file_error = reply[0];
-      break;
-    default:
-      fprintf (stderr, "Unknown reply: %012llo\n", aobjn);
-      exit (1);
-    }
-
-  return n;
-}
-
-int open_file (int fd, char *device, char *fn1, char *fn2, char *sname)
-{
-  word_t args[5];
-  word_t reply[11];
-  int n;
-
-  args[0] = ascii_to_sixbit (device);
-  args[1] = ascii_to_sixbit (fn1);
-  args[2] = ascii_to_sixbit (fn2);
-  args[3] = ascii_to_sixbit (sname);
-  args[4] = 0;
-  fprintf (stderr, "COPENI: %s: %s; %s %s\n", device, sname, fn1, fn2);
-  n = request (fd, COPENI, 5, args, reply);
-  if (file_error)
-    return -1;
-
-  return n;
-}
-
-int close_file (int fd)
-{
-  word_t args[1];
-  word_t reply[1];
-
-  args[0] = 0;
-  fprintf (stderr, "CICLOS\n");
-  return request (fd, CICLOS, 1, args, reply);
-}
-
-int read_file (int fd, word_t *buffer, int size)
-{
-  word_t args[1];
-  int n;
-
-  args[0] = 5 * size;
-  fprintf (stderr, "CALLOC: %012llo\n", args[0]);
-  file_eof = 0;
-  n = request (fd, CALLOC, 1, args, buffer);
-  if (file_eof)
-    return -1;
-  else
-    return n;
-}
-
 static int slurp_file (int fd, char *device, char *fn1, char *fn2,
 		      char *sname, word_t *buffer, int size)
 		       
@@ -355,14 +101,14 @@ static int slurp_file (int fd, char *device, char *fn1, char *fn2,
   word_t reply[11];
   int m, n;
 
-  open_file (fd, device, fn1, fn2, sname);
-  if (file_error)
+  n = protoc_open (fd, device, fn1, fn2, sname);
+  if (n < 0)
     return -1;
 
   m = 0;
   for (;;)
     {
-      n = read_file (fd, buffer, size);
+      n = protoc_read (fd, buffer, size);
       if (n < 0)
 	break;
       memmove (buffer, buffer + 1, sizeof (word_t) * (n - 1));
@@ -371,7 +117,7 @@ static int slurp_file (int fd, char *device, char *fn1, char *fn2,
       m += n - 1;
     }
 
-  close_file (fd);
+  protoc_close (fd);
 
   return m;
 }
@@ -437,18 +183,4 @@ int read_dir (int fd, char *dev, char *sname, char files[][15])
     }
 
   return i;
-}
-
-int init (char *host)
-{
-  int fd;
-
-  fd = client_socket (host, MLDEV_PORT);
-  if (fd == -1)
-    {
-      fprintf (stderr, "Error opening connection.\n");
-      exit (1);
-    }
-
-  return fd;
 }

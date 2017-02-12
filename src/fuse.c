@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
+#include "protoc.h"
 #include "mldev.h"
 
 static int fd;
@@ -165,7 +166,7 @@ static int mldev_open(const char *path, struct fuse_file_info *fi)
 
   fi->nonseekable = 1; /* Not sure about this. */
 
-  n = open_file (fd, device, fn1, fn2, sname);
+  n = protoc_open (fd, device, fn1, fn2, sname);
   if (n < 0)
     return -EIO;
 
@@ -182,7 +183,7 @@ static int mldev_close(const char *path, struct fuse_file_info *fi)
   split_path(path, device, sname, fn1, fn2);
   fprintf (stderr, "close: %s\n", path);
 
-  close_file (fd);
+  protoc_close (fd);
 
   current_path = "";
   current_offset = 0;
@@ -217,7 +218,7 @@ static int mldev_read(const char *path, char *buf, size_t size, off_t offset,
     n = MAX_READ;
   if (n == 0)
     n = 1;
-  n = read_file (fd, buffer, n);
+  n = protoc_read (fd, buffer, n);
   if (n < 0)
     return 0;
 
@@ -250,7 +251,7 @@ static struct fuse_operations mldev =
 
 int main (int argc, char **argv)
 {
-  fd = init ("192.168.1.100");
+  fd = protoc_init ("192.168.1.100");
 
   return fuse_main(argc, argv, &mldev, NULL);
 }
