@@ -38,6 +38,21 @@ void words_to_ascii (void *data, int n, char *ascii)
     }
 }
 
+void ascii_to_words (void *data, int n, const char *ascii)
+{
+  word_t x, *word = data;
+  int i, j;
+  for (i = 0; i < n; i++)
+    {
+      x = 0;
+      for (j = 0; j < 5; j++)
+	{
+	  x = (x << 7) + (*ascii++ & 0177);
+	}
+      *word++ = (x << 1);
+    }
+}
+
 static char *unslash (char *name)
 {
   char *p = name;
@@ -101,7 +116,7 @@ static int slurp_file (int fd, char *device, char *fn1, char *fn2,
   word_t reply[11];
   int m, n;
 
-  n = protoc_open (fd, device, fn1, fn2, sname);
+  n = protoc_open (fd, device, fn1, fn2, sname, 0);
   if (n < 0)
     return -1;
 
@@ -117,7 +132,7 @@ static int slurp_file (int fd, char *device, char *fn1, char *fn2,
       m += n - 1;
     }
 
-  protoc_close (fd);
+  protoc_iclose (fd);
 
   return m;
 }

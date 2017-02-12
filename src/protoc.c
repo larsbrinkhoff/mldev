@@ -86,9 +86,10 @@ static void send_words (int fd, word_t word1, word_t word2)
   data[7] = (word2 >>  8) & 0xff;
   data[8] = (word2 >>  0) & 0xff;
 
-  if (write (fd, data, 9) != 9)
+  ssize_t n = write (fd, data, 9);
+  if (n != 9)
     {
-      fprintf (stderr, "Write error");
+      fprintf (stderr, "Write error: %ld\n", n);
       exit (1);
     }
 }
@@ -147,6 +148,9 @@ static int request (int fd, int cmd, int n, word_t *args, word_t *reply)
     send_words (fd, args[i], args[i+1]);
   flush_socket (fd);
 
+  if (reply == NULL)
+    return 0;
+
  again:
   recv_words (fd, &aobjn, &reply[0]);
   n = (aobjn >> 18);
@@ -180,6 +184,17 @@ static int request (int fd, int cmd, int n, word_t *args, word_t *reply)
 	  file_error = reply[0];
 	}
       break;
+    case ROPENO:
+      if (reply[0] == 0777777777777LL)
+	{
+	  fprintf (stderr, "ROPENO\n");
+	}
+      else
+	{
+	  fprintf (stderr, "ROPENO: error %llo\n", reply[0]);
+	  file_error = reply[0];
+	}
+      break;
     case REOF:
       fprintf (stderr, "REOF\n");
       file_eof = 1;
@@ -191,6 +206,9 @@ static int request (int fd, int cmd, int n, word_t *args, word_t *reply)
       break;
     case RICLOS:
       fprintf (stderr, "RICLOS\n");
+      break;
+    case ROCLOS:
+      fprintf (stderr, "ROCLOS\n");
       break;
     case RIOC:
       fprintf (stderr, "RIOC\n");
@@ -204,26 +222,35 @@ static int request (int fd, int cmd, int n, word_t *args, word_t *reply)
   return n;
 }
 
-int protoc_open (int fd, char *device, char *fn1, char *fn2, char *sname)
+int protoc_open (int fd, char *device, char *fn1, char *fn2, char *sname,
+		 int mode)
 {
   word_t args[5];
   word_t reply[11];
+  int cmd;
   int n;
+
+  if ((mode & 1) == 0)
+    cmd = COPENI;
+  else
+    cmd = COPENO;
 
   args[0] = ascii_to_sixbit (device);
   args[1] = ascii_to_sixbit (fn1);
   args[2] = ascii_to_sixbit (fn2);
   args[3] = ascii_to_sixbit (sname);
-  args[4] = 0;
-  fprintf (stderr, "COPENI: %s: %s; %s %s\n", device, sname, fn1, fn2);
-  n = request (fd, COPENI, 5, args, reply);
+  args[4] = mode;
+  fprintf (stderr, "%s: %s: %s; %s %s / %06o\n",
+	   cmd == COPENO ? "COPENO" : "COPENI",
+	   device, sname, fn1, fn2, mode);
+  n = request (fd, cmd, 5, args, reply);
   if (file_error)
     return -1;
 
   return n;
 }
 
-int protoc_close (int fd)
+int protoc_iclose (int fd)
 {
   word_t args[1];
   word_t reply[1];
@@ -231,6 +258,16 @@ int protoc_close (int fd)
   args[0] = 0;
   fprintf (stderr, "CICLOS\n");
   return request (fd, CICLOS, 1, args, reply);
+}
+
+int protoc_oclose (int fd)
+{
+  word_t args[1];
+  word_t reply[1];
+
+  args[0] = 0;
+  fprintf (stderr, "COCLOS\n");
+  return request (fd, COCLOS, 1, args, reply);
 }
 
 int protoc_read (int fd, word_t *buffer, int size)
@@ -245,6 +282,13 @@ int protoc_read (int fd, word_t *buffer, int size)
     return -1;
   else
     return n;
+}
+
+int protoc_write (int fd, word_t *args, int n)
+{
+  fprintf (stderr, "CDATA: n = %d, bytes = %012llo\n", n, args[0]);
+  n = request (fd, CDATA, n, args, NULL);
+  return 0;
 }
 
 int protoc_init (char *host)

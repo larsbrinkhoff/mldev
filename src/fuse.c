@@ -82,17 +82,17 @@ static int mldev_getattr(const char *path, struct stat *stbuf)
 
   if (sname[0] == 0)
     {
-      stbuf->st_mode = S_IFDIR | 0555;
+      stbuf->st_mode = S_IFDIR | 0777;
       stbuf->st_nlink = 2;
     }
   else if (fn1[0] == 0)
     {
-      stbuf->st_mode = S_IFDIR | 0555;
+      stbuf->st_mode = S_IFDIR | 0777;
       stbuf->st_nlink = 2;
     }
   else
     {
-      stbuf->st_mode = S_IFREG | 0555;
+      stbuf->st_mode = S_IFREG | 0777;
       stbuf->st_nlink = 1;
     }
 
@@ -144,9 +144,17 @@ static int mldev_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
   return 0;
 }
 
+static int mldev_truncate(const char *path, off_t size)
+{
+  if (size != 0)
+    return -EIO;
+  return 0;
+}
+
 static int mldev_open(const char *path, struct fuse_file_info *fi)
 {
   char device[7], sname[7], fn1[7], fn2[7];
+  int mode;
   int n;
 
   if (strcmp (path, current_path) != 0 && *current_path != 0)
@@ -156,8 +164,12 @@ static int mldev_open(const char *path, struct fuse_file_info *fi)
   fprintf (stderr, "open: %s -> %s: %s; %s %s\n",
 	   path, device, sname, fn1, fn2);
 
-  if ((fi->flags & 3) != O_RDONLY)
-    return -EACCES;
+  switch (fi->flags & 3)
+    {
+    case O_RDONLY: mode = 0; break;
+    case O_WRONLY: mode = 1; break;
+    default:       return -EACCES;
+    }
 
   /* In the default case, FUSE looks at st_size to see the size of
      the file.  With MLDEV, this takes some effort.  To avoid that,
@@ -166,7 +178,7 @@ static int mldev_open(const char *path, struct fuse_file_info *fi)
 
   fi->nonseekable = 1; /* Not sure about this. */
 
-  n = protoc_open (fd, device, fn1, fn2, sname);
+  n = protoc_open (fd, device, fn1, fn2, sname, mode);
   if (n < 0)
     return -EIO;
 
@@ -183,12 +195,55 @@ static int mldev_close(const char *path, struct fuse_file_info *fi)
   split_path(path, device, sname, fn1, fn2);
   fprintf (stderr, "close: %s\n", path);
 
-  protoc_close (fd);
+  switch (fi->flags & 3)
+    {
+    case O_RDONLY: protoc_iclose(fd); break;
+    case O_WRONLY: protoc_oclose(fd); break;
+    default: return -EIO;
+    }
 
   current_path = "";
   current_offset = 0;
 
   return 0;
+}
+
+#define MAX_WRITE 0200
+
+static int mldev_write(const char *path, const char *buf, size_t size,
+		       off_t offset, struct fuse_file_info *fi)
+{
+  char device[7], sname[7], fn1[7], fn2[7];
+  word_t buffer[MAX_WRITE + 1];
+  int n;
+
+  split_path(path, device, sname, fn1, fn2);
+  fprintf (stderr, "write: %s, size=%ld, offset=%ld\n", path, size, offset);
+
+  if (offset != current_offset)
+    {
+      fprintf (stderr, "write: offset %ld != current %ld\n",
+	       offset, current_offset);
+      return -ESPIPE;
+    }
+
+  if (size == 0)
+    return 0;
+
+  if (size > 5 * MAX_WRITE)
+    size = 5 * MAX_WRITE;
+  n = (size + 4) / 5;
+
+  buffer[0] = size;
+  ascii_to_words (buffer + 1, n, buf);
+  n++;
+
+  n = protoc_write (fd, buffer, n);
+  if (n < 0)
+    return -EIO;
+
+  current_offset += size;
+  return size;
 }
 
 /* This seems to be a good size for file read requests.  Larger sizes
@@ -243,8 +298,10 @@ static struct fuse_operations mldev =
   .init         = mldev_init,
   .getattr	= mldev_getattr,
   .readdir	= mldev_readdir,
+  .truncate	= mldev_truncate,
   .open		= mldev_open,
   .release	= mldev_close,
+  .write	= mldev_write,
   .read		= mldev_read,
   .readlink	= mldev_readlink,
 };
