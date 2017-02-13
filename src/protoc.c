@@ -245,7 +245,7 @@ int protoc_open (int fd, char *device, char *fn1, char *fn2, char *sname,
 	   device, sname, fn1, fn2, mode);
   n = request (fd, cmd, 5, args, reply);
   if (file_error)
-    return -1;
+    return -file_error;
 
   return n;
 }

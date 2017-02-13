@@ -180,8 +180,12 @@ static int mldev_open(const char *path, struct fuse_file_info *fi)
 
   n = protoc_open (fd, device, fn1, fn2, sname, mode);
   if (n < 0)
-    return -EIO;
-
+    {
+      if (n == -ENSFL)
+	return -ENOENT;
+      else
+	return -EIO;
+    }
   current_path = path;
   current_offset = 0;
 
