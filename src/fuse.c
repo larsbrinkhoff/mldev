@@ -308,7 +308,16 @@ static struct fuse_operations mldev =
 
 int main (int argc, char **argv)
 {
-  fd = protoc_init ("192.168.1.100");
+  if (argc < 2)
+    {
+      fprintf (stderr, "Usage: %s <host> [options] <directory>\n", argv[0]);
+      exit (1);
+    }
+
+  fd = protoc_init (argv[1]);
+
+  argc--;
+  argv++;
 
   return fuse_main(argc, argv, &mldev, NULL);
 }
