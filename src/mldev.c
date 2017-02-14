@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <ctype.h>
 #include <string.h>
 #include <stdlib.h>
 
@@ -74,6 +75,10 @@ static char *trim (char *name)
     {
       *p = 0;
       p--;
+    }
+  for (p = name; *p; ++p)
+    {
+      *p = toupper (*p);
     }
   return name;
 }
