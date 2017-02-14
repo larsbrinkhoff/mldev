@@ -176,11 +176,9 @@
 #define EBDFL 046	/* UNRECOGNIZABLE FILE (LOAD) */
 #define EBDLK 047	/* LINK TO NON-EXISTENT FILE */
 
-#define DIR_MAX 204 /* Maximum number of files in a directory. */
-
 typedef long long word_t;
 
-extern int protoc_init (char *);
+extern int protoc_init (const char *);
 extern int protoc_open (int, char *, char *, char *, char *, int);
 extern int protoc_iclose (int);
 extern int protoc_oclose (int);

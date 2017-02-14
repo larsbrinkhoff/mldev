@@ -291,7 +291,7 @@ int protoc_write (int fd, word_t *args, int n)
   return 0;
 }
 
-int protoc_init (char *host)
+int protoc_init (const char *host)
 {
   int fd;
 
