@@ -126,6 +126,16 @@ static void print_ascii (FILE *f, int n, word_t *words)
     }
 }
 
+static int unix_errno (int n)
+{
+  switch (n)
+    {
+    case -ENSDR:
+    case -ENSFL: return -ENOENT;
+    default:     return -EIO;
+    }
+}
+
 static int slurp_file (int fd, char *device, char *fn1, char *fn2,
 		      char *sname, word_t *buffer, int size)
 		       
@@ -136,7 +146,7 @@ static int slurp_file (int fd, char *device, char *fn1, char *fn2,
 
   n = protoc_open (fd, device, fn1, fn2, sname, 0);
   if (n < 0)
-    return -1;
+    return n;
 
   m = 0;
   for (;;)
@@ -191,7 +201,7 @@ int read_dir (int fd, char *dev, char *sname, struct mldev_file *files)
 
   n = slurp_file (fd, dev, ".FILE.", "(DIR)", sname, buffer, DIR_MAX * 10);
   if (n < 0)
-    return -1;
+    return n;
 
   words_to_ascii (buffer + 1, n - 1, text);
 
@@ -300,7 +310,7 @@ int mldev_readdir (const char *path, struct mldev_file *files)
   else
     n = read_dir (fd, device, sname, files);
   if (n < 0)
-    return -EIO;
+    return unix_errno (n);
 
   return n;
 }
@@ -327,12 +337,8 @@ int mldev_open (const char *path, int flags)
 
   n = protoc_open (fd, device, fn1, fn2, sname, mode);
   if (n < 0)
-    {
-      if (n == -ENSFL)
-	return -ENOENT;
-      else
-	return -EIO;
-    }
+    return unix_errno (n);
+
   current_path = path;
   current_offset = 0;
   current_flags = (flags & 3);

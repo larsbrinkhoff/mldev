@@ -36,12 +36,12 @@ static int mlfuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
   struct mldev_file files[DIR_MAX];
   int i, n;
   
-  filler (buf, ".", NULL, 0);
-  filler (buf, "..", NULL, 0);
-
   n = mldev_readdir (path, files);
   if (n < 0)
-    return -EIO;
+    return n;
+
+  filler (buf, ".", NULL, 0);
+  filler (buf, "..", NULL, 0);
 
   for (i = 0; i < n; i++)
     {
