@@ -179,8 +179,8 @@
 typedef long long word_t;
 
 extern int protoc_init (const char *);
-extern int protoc_open (int, char *, char *, char *, char *, int);
-extern int protoc_iclose (int);
-extern int protoc_oclose (int);
-extern int protoc_read (int, word_t *, int);
-extern int protoc_write (int, word_t *, int);
+extern int protoc_open (char *, char *, char *, char *, int);
+extern int protoc_iclose (void);
+extern int protoc_oclose (void);
+extern int protoc_read (word_t *, int);
+extern int protoc_write (word_t *, int);

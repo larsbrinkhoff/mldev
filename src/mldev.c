@@ -136,22 +136,22 @@ static int unix_errno (int n)
     }
 }
 
-static int slurp_file (int fd, char *device, char *fn1, char *fn2,
-		      char *sname, word_t *buffer, int size)
+static int slurp_file (char *device, char *fn1, char *fn2,
+		       char *sname, word_t *buffer, int size)
 		       
 {
   word_t args[5];
   word_t reply[11];
   int m, n;
 
-  n = protoc_open (fd, device, fn1, fn2, sname, 0);
+  n = protoc_open (device, fn1, fn2, sname, 0);
   if (n < 0)
     return n;
 
   m = 0;
   for (;;)
     {
-      n = protoc_read (fd, buffer, size);
+      n = protoc_read (buffer, size);
       if (n < 0)
 	break;
       memmove (buffer, buffer + 1, sizeof (word_t) * (n - 1));
@@ -160,19 +160,19 @@ static int slurp_file (int fd, char *device, char *fn1, char *fn2,
       m += n - 1;
     }
 
-  protoc_iclose (fd);
+  protoc_iclose ();
 
   return m;
 }
 
-int read_mfd (int fd, struct mldev_file *files)
+int read_mfd (struct mldev_file *files)
 {
   int i, j, n;
   word_t buffer[1 + DIR_MAX * 2];
   char text[DIR_MAX * 9], *p;
   char filename[11];
 
-  n = slurp_file (fd, "DSK", "M.F.D.", "(FILE)", "", buffer, DIR_MAX * 2);
+  n = slurp_file ("DSK", "M.F.D.", "(FILE)", "", buffer, DIR_MAX * 2);
   words_to_ascii (buffer, n, text);
 
   p = text;
@@ -193,13 +193,13 @@ int read_mfd (int fd, struct mldev_file *files)
   return i;
 }
 
-int read_dir (int fd, char *dev, char *sname, struct mldev_file *files)
+int read_dir (char *dev, char *sname, struct mldev_file *files)
 {
   char text[DIR_MAX * 50], *p, *q;
   word_t buffer[1 + DIR_MAX * 10];
   int i, n;
 
-  n = slurp_file (fd, dev, ".FILE.", "(DIR)", sname, buffer, DIR_MAX * 10);
+  n = slurp_file (dev, ".FILE.", "(DIR)", sname, buffer, DIR_MAX * 10);
   if (n < 0)
     return n;
 
@@ -236,7 +236,6 @@ int read_dir (int fd, char *dev, char *sname, struct mldev_file *files)
 
 /**********************************************************************/ 
 
-static int fd;
 static const char *current_path = "";
 static int current_offset = 0;
 static int current_flags = 0;
@@ -306,9 +305,9 @@ int mldev_readdir (const char *path, struct mldev_file *files)
 	   path, device, sname, fn1, fn2);
 
   if (sname[0] == 0)
-    n = read_mfd (fd, files);
+    n = read_mfd (files);
   else
-    n = read_dir (fd, device, sname, files);
+    n = read_dir (device, sname, files);
   if (n < 0)
     return unix_errno (n);
 
@@ -335,7 +334,7 @@ int mldev_open (const char *path, int flags)
     default:       return -EACCES;
     }
 
-  n = protoc_open (fd, device, fn1, fn2, sname, mode);
+  n = protoc_open (device, fn1, fn2, sname, mode);
   if (n < 0)
     return unix_errno (n);
 
@@ -355,8 +354,8 @@ int mldev_close(const char *path)
 
   switch (current_flags)
     {
-    case O_RDONLY: protoc_iclose(fd); break;
-    case O_WRONLY: protoc_oclose(fd); break;
+    case O_RDONLY: protoc_iclose(); break;
+    case O_WRONLY: protoc_oclose(); break;
     default: return -EIO;
     }
 
@@ -396,7 +395,7 @@ int mldev_write(const char *path, const char *buf, int size, int offset)
   ascii_to_words (buffer + 1, n, buf);
   n++;
 
-  n = protoc_write (fd, buffer, n);
+  n = protoc_write (buffer, n);
   if (n < 0)
     return -EIO;
 
@@ -430,7 +429,7 @@ int mldev_read (const char *path, char *buf, int size, int offset)
     n = MAX_READ;
   if (n == 0)
     n = 1;
-  n = protoc_read (fd, buffer, n);
+  n = protoc_read (buffer, n);
   if (n < 0)
     return 0;
 
@@ -452,5 +451,5 @@ static int mldev_readlink (const char *path, char *data, size_t n)
 
 void mldev_init (const char *host)
 {
-  fd = protoc_init (host);
+  protoc_init (host);
 }

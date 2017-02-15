@@ -1,14 +1,14 @@
 CPPFLAGS=-D_FILE_OFFSET_BITS=64
 
-all: mount-mldev
+HEADERS=src/mldev.h src/protoc.h src/io.h
+OBJS=src/mldev.o src/protoc.o src/io.o
 
-mldev: src/mldev.h src/mldev.o
-	$(CC) -o $@ $^
+all: mount-mldev
 
 mlslv: src/mldev.h src/mlslv.o
 
-mount-mldev: src/mldev.h src/mldev.o src/fuse.o src/protoc.h src/protoc.o
-	$(CC) -o $@ $^ -lfuse
+mount-mldev: src/fuse.o $(HEADERS) $(OBJS)
+	$(CC) -o $@ src/fuse.o $(OBJS) -lfuse
 
 clean:
 	-rm -f src/*.o
