@@ -1,4 +1,4 @@
 /mldev
-/mount-mldev
+/mount.mldev
 /src/*.o
 *~

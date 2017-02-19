@@ -13,7 +13,7 @@ Install libfuse-dev, then type `make`.
 Create a mount point directory, and then mount an ITS file system like
 this:
 
-    sudo ./mount-mldev <hostname> <mountpoint>
+    sudo ./mount.mldev <hostname> <mountpoint>
 
 I haven't bothered to figure out how FUSE works with user permissions,
 so do everything as root.
