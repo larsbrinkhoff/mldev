@@ -24,6 +24,13 @@ FUSE accepts a number of command line options **in between** the host
 name and mount point.  A useful one is `-f` which makes FUSE run in
 the foreground and print debug messages.
 
+Another way is to add the file system to /etc/fstab:
+
+    hostname mountpoint mldev rw 0 0
+
+Note that for this to work, mount.mldev must be installed somewhere
+mount can find it, e.g. in /sbin.
+
 ### Bugs
 
 - Doesn't work with binary files.  Only text files for now.

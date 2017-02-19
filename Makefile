@@ -5,6 +5,10 @@ OBJS=src/mldev.o src/protoc.o src/io.o
 
 all: mount.mldev
 
+# Install in /sbin to make "mount" happy.
+install:
+	install mount.mldev /sbin
+
 mlslv: src/mldev.h src/mlslv.o
 
 mount.mldev: src/fuse.o $(HEADERS) $(OBJS)
